@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ruteador Inteligente - Control de Rutas & CSVs</title>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="brand-icon">
+        <i class="fa-solid fa-route"></i>
+      </div>
+      <div>
+        <div class="brand-title">Ruteador Inteligente</div>
+        <div class="brand-subtitle">Gestión de Rutas & Exportación de CSVs</div>
+      </div>
+    </div>
+
+    <!-- View Switcher Tabs -->
+    <div class="nav-tabs-container">
+      <button id="tab-map-btn" class="nav-tab active" onclick="switchView('map')">
+        <i class="fa-solid fa-map-marked-alt"></i> Ruteador & Mapa
+      </button>
+      <button id="tab-dash-btn" class="nav-tab" onclick="switchView('dashboard')">
+        <i class="fa-solid fa-chart-column"></i> Dashboard de Avance
+      </button>
+    </div>
+
+    <div class="nav-actions">
+      <!-- Selector de País -->
+      <div class="form-group">
+        <label class="form-label">País</label>
+        <select id="country-select" class="form-control">
+          <option value="República Dominicana">República Dominicana 🇩🇴</option>
+          <option value="Colombia">Colombia 🇨🇴</option>
+          <option value="México">México 🇲🇽</option>
+        </select>
+      </div>
+
+      <!-- Día de Campo -->
+      <div class="form-group">
+        <label class="form-label">Día de Campo</label>
+        <input type="number" id="dia-campo-input" class="form-control" value="1" min="1" max="30" style="width: 100px;">
+      </div>
+
+      <!-- Cargar Excel Btn -->
+      <button class="btn btn-secondary" onclick="openModal('upload-modal')">
+        <i class="fa-solid fa-file-excel"></i> Subir Excel
+      </button>
+
+      <!-- Botón Google My Maps -->
+      <button class="btn btn-secondary" style="border-color: var(--accent-amber); color: var(--accent-amber);" onclick="openModal('mymaps-modal')">
+        <i class="fa-solid fa-map-location-dot"></i> Google My Maps
+      </button>
+
+      <!-- Botón Principal CARGAR -->
+      <button class="btn btn-primary" id="btn-cargar-ruta" onclick="processRoute()">
+        <i class="fa-solid fa-play"></i> CARGAR Y GENERAR
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Layout (Map View) -->
+  <main class="main-layout" id="map-view-container">
+
+    <!-- Sidebar Controls -->
+    <aside class="sidebar">
+      
+      <!-- Metrics Overview -->
+      <div class="glass-card" style="padding: 1.25rem;">
+        <div class="section-title">
+          <i class="fa-solid fa-chart-pie"></i> Resumen de Ruta
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-number" id="stat-total-puntos">0</div>
+            <div class="stat-desc">Puntos Totales</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="stat-filtrados" style="color: var(--accent-emerald);">0</div>
+            <div class="stat-desc">En Ruta Hoy</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="stat-extra" style="color: var(--accent-amber);">0</div>
+            <div class="stat-desc">Puntos Extra Cliente</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="stat-auditores" style="color: var(--accent-purple);">0</div>
+            <div class="stat-desc">Auditores Activos</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Puntos Extra Solicitados por Cliente -->
+      <div class="glass-card" style="padding: 1.25rem;">
+        <div class="section-title">
+          <i class="fa-solid fa-user-plus"></i> Puntos Extra del Cliente
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Agregue puntos de otros días solicitados por el cliente para visitarse el día de hoy.
+        </p>
+        <button class="btn btn-secondary" style="width: 100%;" onclick="openModal('extra-modal')">
+          <i class="fa-solid fa-list-check"></i> Seleccionar Puntos Extra (<span id="extra-badge-count">0</span>)
+        </button>
+      </div>
+
+      <!-- Map Filters & Segmentations -->
+      <div class="glass-card" style="padding: 1.25rem;">
+        <div class="section-title">
+          <i class="fa-solid fa-filter"></i> Segmentación y Filtros
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label">Auditor</label>
+          <select id="filter-auditor" class="form-control" onchange="applyFilters()">
+            <option value="ALL">Todos los Auditores</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label">Canal / Tipo Cliente</label>
+          <select id="filter-canal" class="form-control" onchange="applyFilters()">
+            <option value="ALL">Todos los Canales</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label">PDVs Fijos (30%)</label>
+          <select id="filter-fijo" class="form-control" onchange="applyFilters()">
+            <option value="ALL">Todos</option>
+            <option value="SI">Solo FIJOS (SI)</option>
+            <option value="NO">Solo NO FIJOS</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Selección (T / S)</label>
+          <select id="filter-seleccion" class="form-control" onchange="applyFilters()">
+            <option value="ALL">Todas (T y S)</option>
+            <option value="T">Selección T</option>
+            <option value="S">Selección S</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Exportaciones & Links -->
+      <div class="glass-card" style="padding: 1.25rem;">
+        <div class="section-title">
+          <i class="fa-solid fa-download"></i> Acciones & Exportación
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <button class="btn btn-emerald" id="btn-download-zip" onclick="downloadZip()" disabled>
+            <i class="fa-solid fa-file-zipper"></i> Descargar ZIP con CSVs
+          </button>
+          <button class="btn btn-secondary" onclick="openModal('links-modal')">
+            <i class="fa-solid fa-qrcode"></i> Enlaces Dinámicos Auditores
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Main View Section -->
+    <section style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+      <!-- Interactive Map Area -->
+      <div class="map-wrapper glass-card">
+        <div class="map-floating-bar">
+          <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="setTileLayer('streets')">
+            <i class="fa-solid fa-map"></i> Calles
+          </button>
+          <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="setTileLayer('satellite')">
+            <i class="fa-solid fa-globe"></i> Satélite
+          </button>
+          <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="fitMapBounds()">
+            <i class="fa-solid fa-expand"></i> Centrar
+          </button>
+        </div>
+        <div id="map"></div>
+      </div>
+
+      <!-- CSV & Route Details Table -->
+      <div class="glass-card" style="padding: 1.5rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+          <div class="section-title" style="margin-bottom: 0;">
+            <i class="fa-solid fa-table-list"></i> Reportes CSVs Generados por Auditor
+          </div>
+          <span id="last-updated-text" style="font-size: 0.75rem; color: var(--text-muted);">
+            Proceso sin ejecutar
+          </span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Auditor</th>
+                <th>Total Puntos</th>
+                <th>T (Base)</th>
+                <th>T ON PREMISE</th>
+                <th>T FIJOS</th>
+                <th>S (Base)</th>
+                <th>S FIJOS</th>
+                <th>Descargas / Links</th>
+              </tr>
+            </thead>
+            <tbody id="csv-summary-tbody">
+              <tr>
+                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                  Presione el botón <strong>"CARGAR Y GENERAR"</strong> para procesar los reportes de ruta.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Dashboard de Avance View Container -->
+  <section id="dashboard-view-container" style="display: none; padding: 1.5rem 2rem; max-width: 1800px; margin: 0 auto; width: 100%;">
+    
+    <!-- Top Summary Banner -->
+    <div class="glass-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h2 style="font-size: 1.4rem; color: #fff;"><i class="fa-solid fa-chart-line" style="color: var(--accent-cyan);"></i> Dashboard de Avance de Visitas</h2>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            Seguimiento en tiempo real de puntos visitados (registrados en <code>export.Estado</code>) frente a puntos pendientes.
+          </p>
+        </div>
+        <button class="btn btn-secondary" onclick="loadDashboardAnalytics()">
+          <i class="fa-solid fa-rotate-right"></i> Actualizar Métricas
+        </button>
+      </div>
+
+      <!-- KPI Grid -->
+      <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-top: 1.25rem;">
+        <div class="stat-card">
+          <div class="stat-number" id="dash-global-pct" style="color: var(--accent-cyan); font-size: 1.8rem;">0%</div>
+          <div class="stat-desc">Cumplimiento Global</div>
+          <div class="progress-bar-container" style="margin-top: 0.5rem;">
+            <div id="dash-global-bar" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="dash-global-visited" style="color: var(--accent-emerald);">0</div>
+          <div class="stat-desc">Total Visitados / Auditados</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="dash-global-pending" style="color: var(--accent-amber);">0</div>
+          <div class="stat-desc">Total Pendientes por Visitar</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="dash-global-total" style="color: #fff;">0</div>
+          <div class="stat-desc">Universo Total Programado</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section: Selección T vs S Breakdown -->
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
+      <!-- Selección T Card -->
+      <div class="glass-card" style="padding: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="color: #fff; font-size: 1.1rem;"><span class="badge badge-cyan">SELECCIÓN T</span> Avance de Visitas</h3>
+          <span class="badge badge-cyan" id="dash-sel-t-pct" style="font-size: 0.9rem;">0%</span>
+        </div>
+        <div class="progress-bar-container" style="height: 12px; margin-bottom: 1rem;">
+          <div id="dash-sel-t-bar" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted);">
+          <span>Visitados: <strong id="dash-sel-t-visited" style="color: var(--accent-emerald);">0</strong></span>
+          <span>Pendientes: <strong id="dash-sel-t-pending" style="color: var(--accent-amber);">0</strong></span>
+          <span>Total: <strong id="dash-sel-t-total" style="color: #fff;">0</strong></span>
+        </div>
+      </div>
+
+      <!-- Selección S Card -->
+      <div class="glass-card" style="padding: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="color: #fff; font-size: 1.1rem;"><span class="badge badge-amber">SELECCIÓN S</span> Avance de Visitas</h3>
+          <span class="badge badge-amber" id="dash-sel-s-pct" style="font-size: 0.9rem;">0%</span>
+        </div>
+        <div class="progress-bar-container" style="height: 12px; margin-bottom: 1rem;">
+          <div id="dash-sel-s-bar" class="progress-bar-fill amber" style="width: 0%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted);">
+          <span>Visitados: <strong id="dash-sel-s-visited" style="color: var(--accent-emerald);">0</strong></span>
+          <span>Pendientes: <strong id="dash-sel-s-pending" style="color: var(--accent-amber);">0</strong></span>
+          <span>Total: <strong id="dash-sel-s-total" style="color: #fff;">0</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section: Avance por Auditor (Tabla Detallada con Barra de Progreso) -->
+    <div class="glass-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+      <div class="section-title">
+        <i class="fa-solid fa-users-gear"></i> Estado y Avance por Auditor
+      </div>
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Auditor</th>
+              <th>Total Programados</th>
+              <th>Visitados</th>
+              <th>Pendientes</th>
+              <th>Fijos Obligatorios (Visitados / Total)</th>
+              <th style="width: 250px;">% Barra de Avance</th>
+            </tr>
+          </thead>
+          <tbody id="dash-auditor-tbody">
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Cargando métricas de auditores...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section: Avance por Día de Campo -->
+    <div class="glass-card" style="padding: 1.5rem;">
+      <div class="section-title">
+        <i class="fa-solid fa-calendar-days"></i> Avance por Día de Campo
+      </div>
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Día de Campo</th>
+              <th>Total Puntos</th>
+              <th>Visitados</th>
+              <th>Pendientes</th>
+              <th style="width: 300px;">% Avance Diario</th>
+            </tr>
+          </thead>
+          <tbody id="dash-day-tbody">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Cargando métricas por día...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- MODAL 1: Puntos Extra del Cliente -->
+  <div class="modal-overlay" id="extra-modal">
+    <div class="modal-content glass-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-user-plus" style="color: var(--accent-amber);"></i> Selección de Puntos Solicitados por Cliente</h3>
+        <button class="close-btn" onclick="closeModal('extra-modal')">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Busque y marque los puntos de otros días que el cliente solicitó incorporar a la ruta del día actual.
+      </p>
+
+      <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+        <input type="text" id="search-extra-input" class="form-control" placeholder="Buscar por Nombre, Dirección, ID o Sector..." onkeyup="filterExtraPointsTable()" style="flex: 1;">
+        <select id="filter-extra-day" class="form-control" onchange="filterExtraPointsTable()" style="width: 160px;">
+          <option value="ALL">Todos los Días</option>
+        </select>
+      </div>
+
+      <div class="table-responsive" style="max-height: 450px;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">Incluir</th>
+              <th>Día Prog.</th>
+              <th>Nombre PDV</th>
+              <th>Auditor</th>
+              <th>Sector / Dirección</th>
+              <th>Canal</th>
+              <th>Fijo</th>
+            </tr>
+          </thead>
+          <tbody id="extra-points-tbody">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.25rem;">
+        <button class="btn btn-secondary" onclick="closeModal('extra-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmExtraPoints()">Guardar Selección</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Subir Excel -->
+  <div class="modal-overlay" id="upload-modal">
+    <div class="modal-content glass-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-file-excel" style="color: var(--accent-emerald);"></i> Cargar Nuevo Archivo Excel</h3>
+        <button class="close-btn" onclick="closeModal('upload-modal')">&times;</button>
+      </div>
+      
+      <form id="upload-excel-form" onsubmit="uploadExcel(event)">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">País del Archivo</label>
+          <select id="upload-country" class="form-control">
+            <option value="República Dominicana">República Dominicana 🇩🇴</option>
+            <option value="Colombia">Colombia 🇨🇴</option>
+            <option value="México">México 🇲🇽</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label class="form-label">Archivo Excel (.xlsx)</label>
+          <input type="file" id="excel-file-input" class="form-control" accept=".xlsx, .xls" required>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal')">Cancelar</button>
+          <button type="submit" class="btn btn-emerald">Subir y Procesar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 3: Enlaces Dinámicos Auditores -->
+  <div class="modal-overlay" id="links-modal">
+    <div class="modal-content glass-card" style="max-width: 650px;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-qrcode" style="color: var(--accent-purple);"></i> Enlaces Dinámicos Diarios por Auditor</h3>
+        <button class="close-btn" onclick="closeModal('links-modal')">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Comparta el enlace correspondiente a cada auditor. El enlace se actualiza automáticamente cada día con sus nuevos puntos a visitar.
+      </p>
+
+      <div id="auditor-links-list">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: Google My Maps Consolidado -->
+  <div class="modal-overlay" id="mymaps-modal">
+    <div class="modal-content glass-card" style="max-width: 750px;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-map-location-dot" style="color: var(--accent-amber);"></i> Integración con Google My Maps</h3>
+        <button class="close-btn" onclick="closeModal('mymaps-modal')">&times;</button>
+      </div>
+      
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Visualice todos los puntos de todos los auditores segmentados por <strong>Auditor, Canal, PDV Fijo (30%) y Selección (T/S)</strong> en Google My Maps.
+      </p>
+
+      <!-- Quick Action Buttons -->
+      <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <a id="btn-open-mymaps-link" href="https://www.google.com/maps/d/u/0/" target="_blank" class="btn btn-primary" style="flex: 1; text-decoration: none;">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> Abrir Google My Maps
+        </a>
+        <a id="btn-download-master-csv" href="/api/download-csv/MASTER_GOOGLE_MYMAPS_TODOS.csv" class="btn btn-emerald" style="flex: 1; text-decoration: none;">
+          <i class="fa-solid fa-file-csv"></i> Descargar CSV Master Consolidado
+        </a>
+      </div>
+
+      <!-- Config My Maps Link -->
+      <div style="background: rgba(15, 23, 42, 0.6); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--bg-card-border); margin-bottom: 1.25rem;">
+        <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Enlace Directo a su Mapa de Google My Maps (Opcional):</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <input type="text" id="custom-mymaps-url" class="form-control" placeholder="https://www.google.com/maps/d/u/0/viewer?mid=..." style="flex: 1;">
+          <button class="btn btn-secondary" onclick="saveCustomMyMapsUrl()">Guardar Link</button>
+        </div>
+        <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem; display: block;">
+          Pegue el enlace compartido de su mapa en Google My Maps para abrirlo directamente con 1-clic cada día.
+        </small>
+      </div>
+
+      <!-- Instructions List -->
+      <div style="font-size: 0.85rem; color: var(--text-main);">
+        <h4 style="color: var(--accent-cyan); margin-bottom: 0.5rem;"><i class="fa-solid fa-circle-info"></i> Pasos para actualizar en Google My Maps:</h4>
+        <ol style="padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-muted);">
+          <li>Haga clic en <strong>"Descargar CSV Master Consolidado"</strong> (contiene la lista completa de puntos del día con todas sus clasificaciones).</li>
+          <li>Abra <strong>Google My Maps</strong> e inicie sesión con su cuenta.</li>
+          <li>En la capa de su mapa, seleccione <strong>Importar</strong> y elija el archivo CSV descargado.</li>
+          <li>Seleccione las columnas <strong>LATITUD</strong> y <strong>LONGITUD</strong> para las coordenadas, y <strong>NAME Cliente (PDV)</strong> para la etiqueta del marcador.</li>
+          <li>Elija <strong>Estilo por columna</strong> y seleccione <code>Tabla11.auditor</code>, <code>TIPO CLIENTE ICE</code> o <code>CLIENTE FIJO 30%</code> para clasificar y dar color a los marcadores de forma idéntica a su modelo.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Custom Application JS -->
+  <script src="/static/js/main.js"></script>
+</body>
+</html>
