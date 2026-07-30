@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ruta del Día - Auditor</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+    }
+    .mobile-header {
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--bg-card-border);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    .point-card {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .point-card.is-extra {
+      border-color: var(--accent-amber);
+      background: rgba(245, 158, 11, 0.08);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Mobile Top Header -->
+  <header class="mobile-header">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div>
+        <h2 id="auditor-name" style="font-size: 1.2rem; color: #fff; font-weight: 700;">Auditando...</h2>
+        <span style="font-size: 0.8rem; color: var(--accent-cyan);" id="auditor-day">Día de Campo #--</span>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 1.4rem; font-weight: 800; color: var(--accent-emerald);" id="auditor-total">0</div>
+        <div style="font-size: 0.7rem; color: var(--text-muted);">PUNTOS HOY</div>
+      </div>
+    </div>
+
+    <!-- Quick Navigation Action -->
+    <div style="margin-top: 0.75rem;">
+      <a id="btn-open-gmaps" target="_blank" class="btn btn-primary" style="width: 100%; text-decoration: none;">
+        <i class="fa-solid fa-map-location-dot"></i> Abrir Ruta en Google Maps
+      </a>
+    </div>
+  </header>
+
+  <main style="padding: 1rem; max-width: 600px; margin: 0 auto;">
+    
+    <!-- Mini Map -->
+    <div class="map-wrapper glass-card" style="height: 250px; margin-bottom: 1rem;">
+      <div id="auditor-map" style="width: 100%; height: 100%;"></div>
+    </div>
+
+    <!-- Filter/Search -->
+    <input type="text" id="search-point" class="form-control" placeholder="Buscar por nombre o dirección..." onkeyup="filterPoints()" style="margin-bottom: 1rem;">
+
+    <!-- List of Points -->
+    <div id="points-list">
+      <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+        Cargando puntos de la ruta...
+      </div>
+    </div>
+
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const auditorSlug = "{{ auditor_slug }}";
+    let auditorData = null;
+    let map = null;
+    let markersLayer = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initAuditorMap();
+      fetchAuditorRoute();
+    });
+
+    function initAuditorMap() {
+      map = L.map('auditor-map').setView([18.4861, -69.9312], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      markersLayer = L.layerGroup().addTo(map);
+    }
+
+    async function fetchAuditorRoute() {
+      try {
+        const res = await fetch(`/api/auditor-data/${auditorSlug}`);
+        auditorData = await res.json();
+
+        document.getElementById('auditor-name').innerText = auditorData.auditor_name || auditorSlug.toUpperCase();
+        document.getElementById('auditor-total').innerText = auditorData.total_points || 0;
+
+        renderPointsList(auditorData.points || []);
+        renderMapMarkers(auditorData.points || []);
+        updateGoogleMapsLink(auditorData.points || []);
+
+      } catch (err) {
+        console.error("Error fetching auditor data:", err);
+        document.getElementById('points-list').innerHTML = `<div style="color: var(--accent-rose); text-align: center;">Error al cargar datos de la ruta.</div>`;
+      }
+    }
+
+    function renderPointsList(points) {
+      const container = document.getElementById('points-list');
+      if (!points || points.length === 0) {
+        container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No tiene puntos asignados para el día seleccionado.</div>`;
+        return;
+      }
+
+      // Sort: FIJOS first (mandatory), then extra, then regular
+      const sortedPoints = [...points].sort((a, b) => {
+        if (a.fijo !== b.fijo) return b.fijo ? 1 : -1;
+        if (a.is_extra !== b.is_extra) return b.is_extra ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      });
+
+      const fijosCount = sortedPoints.filter(p => p.fijo).length;
+
+      let html = '';
+      if (fijosCount > 0) {
+        html += `
+          <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-emerald); padding: 0.6rem 1rem; border-radius: var(--radius-sm); margin-bottom: 0.75rem; color: #fff; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; justify-content: space-between;">
+            <span><i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-emerald);"></i> PUNTOS OBLIGATORIOS (PDVs FIJOS 30%)</span>
+            <span class="badge badge-emerald">${fijosCount} OBLIGATORIOS</span>
+          </div>
+        `;
+      }
+
+      html += sortedPoints.map((p, idx) => `
+        <div class="point-card ${p.fijo ? 'is-fijo' : (p.is_extra ? 'is-extra' : '')}" style="${p.fijo ? 'border-color: var(--accent-emerald); background: rgba(16, 185, 129, 0.08);' : ''}">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+            <div>
+              <span class="badge ${p.fijo ? 'badge-emerald' : (p.is_extra ? 'badge-amber' : 'badge-cyan')}">
+                #${idx + 1} ${p.fijo ? '🚨 FIJO OBLIGATORIO' : (p.is_extra ? 'SOLICITADO POR CLIENTE' : 'PROGRAMADO')}
+              </span>
+              <h4 style="color: #fff; margin-top: 0.35rem; font-size: 1rem;">${p.name}</h4>
+            </div>
+            ${p.fijo ? '<span class="badge badge-emerald" style="white-space: nowrap;">FIJO 30%</span>' : ''}
+          </div>
+
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+            <i class="fa-solid fa-location-dot" style="color: var(--accent-cyan);"></i> ${p.direccion || 'Sin dirección registrada'}
+            ${p.sector ? `(${p.sector})` : ''}
+          </div>
+
+          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.35rem;">
+            <span class="badge badge-purple">${p.canal}</span>
+            <span class="badge badge-amber">SELECCIÓN ${p.seleccion}</span>
+            <span class="badge badge-cyan">DÍA ${p.dia}</span>
+          </div>
+
+          <div style="margin-top: 0.6rem;">
+            <a href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}" target="_blank" class="btn ${p.fijo ? 'btn-emerald' : 'btn-secondary'}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem;">
+              <i class="fa-solid fa-compass"></i> Navegar a este punto
+            </a>
+          </div>
+        </div>
+      `).join('');
+
+      container.innerHTML = html;
+    }
+
+    function renderMapMarkers(points) {
+      markersLayer.clearLayers();
+      const bounds = [];
+
+      points.forEach(p => {
+        if (p.lat && p.lng && p.lat !== 0) {
+          const color = p.is_extra ? '#f59e0b' : '#00f2fe';
+          const marker = L.circleMarker([p.lat, p.lng], {
+            radius: 7,
+            fillColor: color,
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9
+          }).bindPopup(`<b>${p.name}</b><br>${p.direccion}`);
+
+          markersLayer.addLayer(marker);
+          bounds.push([p.lat, p.lng]);
+        }
+      });
+
+      if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [20, 20] });
+      }
+    }
+
+    function updateGoogleMapsLink(points) {
+      const validPoints = points.filter(p => p.lat && p.lng && p.lat !== 0);
+      if (validPoints.length === 0) return;
+
+      // Google Maps directions url max limit (first 10 points for waypoint route)
+      const sample = validPoints.slice(0, 10);
+      const origin = `${sample[0].lat},${sample[0].lng}`;
+      const dest = `${sample[sample.length - 1].lat},${sample[sample.length - 1].lng}`;
+      const waypoints = sample.slice(1, -1).map(p => `${p.lat},${p.lng}`).join('|');
+
+      let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
+      if (waypoints) {
+        url += `&waypoints=${waypoints}`;
+      }
+
+      document.getElementById('btn-open-gmaps').href = url;
+    }
+
+    function filterPoints() {
+      const query = document.getElementById('search-point').value.toLowerCase();
+      if (!auditorData || !auditorData.points) return;
+      const filtered = auditorData.points.filter(p => 
+        p.name.toLowerCase().includes(query) || 
+        p.direccion.toLowerCase().includes(query) ||
+        p.sector.toLowerCase().includes(query)
+      );
+      renderPointsList(filtered);
+    }
+  </script>
+</body>
+</html>
